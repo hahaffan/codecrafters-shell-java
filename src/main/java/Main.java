@@ -4,7 +4,7 @@ import java.util.*;
 
 public class Main {
 
-    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("echo", "exit", "type", "pwd", "cd"));
+    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("echo", "exit", "type", "pwd", "cd", "jobs"));
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -82,6 +82,7 @@ public class Main {
             case "type" -> handleType(cmdArgs);
             case "pwd"  -> handlePwd();
             case "cd"   -> handleCd(cmdArgs);
+            case "jobs" -> handleJobs();
             default     -> handleExternal(cmd, cmdArgs, redir);
         }
     }
@@ -160,6 +161,10 @@ public class Main {
     // -------------------------------------------------------------------------
     // External commands
     // -------------------------------------------------------------------------
+
+    private static void handleJobs() {
+        // No background jobs yet - produces no output
+    }
 
     private static void handleExternal(String cmd, List<String> args, Redirection redir) throws IOException {
         String fullPath = findInPath(cmd);

@@ -6,7 +6,6 @@ public class Main {
     private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList(
             "echo", "exit", "type", "pwd", "cd", "jobs"));
     
-    private static int nextJobNumber = 1;
     // LinkedHashMap preserves insertion order, which is critical for marker logic
     private static final Map<Integer, Job> backgroundJobs = new LinkedHashMap<>();
 
@@ -232,7 +231,8 @@ public class Main {
         Process process = pb.start();
 
         if (background) {
-            int jobId = nextJobNumber++;
+            // RECYCLING JOB NUMBERS: Max current key + 1, or 1 if empty
+            int jobId = backgroundJobs.isEmpty() ? 1 : Collections.max(backgroundJobs.keySet()) + 1;
             backgroundJobs.put(jobId, new Job(jobId, process, originalLine));
             System.out.println("[" + jobId + "] " + process.pid());
         } else {

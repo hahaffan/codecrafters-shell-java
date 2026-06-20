@@ -36,7 +36,7 @@ public class Main {
             }
 
             if (input.equals("pwd")) {
-                System.out.println(currentDirectory.toString());
+                System.out.println(currentDirectory);
                 continue;
             }
 
@@ -45,7 +45,9 @@ public class Main {
 
                 Path target;
 
-                if (Paths.get(dir).isAbsolute()) {
+                if (dir.equals("~")) {
+                    target = Paths.get(System.getenv("HOME"));
+                } else if (Paths.get(dir).isAbsolute()) {
                     target = Paths.get(dir);
                 } else {
                     target = currentDirectory.resolve(dir);

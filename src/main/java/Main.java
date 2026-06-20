@@ -81,7 +81,7 @@ public class Main {
         }
         pipelines.add(currentSegment);
 
-        // handlePipeline natively processes both single commands and complex pipelines
+        // handlePipeline natively processes both single commands and complex pipelines of any length
         handlePipeline(pipelines, background, originalLine);
     }
 

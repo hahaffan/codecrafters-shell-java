@@ -9,7 +9,7 @@ public class Main {
 
     private static int nextJobNumber = 1;
     
-    // Track background jobs
+    // LinkedHashMap preserves insertion order, which is critical for marker logic
     private static final Map<Integer, Job> backgroundJobs = new LinkedHashMap<>();
 
     private static class Job {
@@ -43,10 +43,6 @@ public class Main {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Redirection info
-    // -------------------------------------------------------------------------
-
     private static class Redirection {
         String stdoutFile = null;
         String stderrFile = null;
@@ -54,17 +50,11 @@ public class Main {
         boolean stderrAppend = false;
     }
 
-    // -------------------------------------------------------------------------
-    // Command dispatch
-    // -------------------------------------------------------------------------
-
     private static void runCommand(String line) throws IOException {
         line = line.trim();
         if (line.isEmpty()) return;
 
-        // Save the original line exactly as typed so `jobs` can display it
         String originalLine = line;
-
         List<String> tokens = tokenize(line);
         if (tokens.isEmpty()) return;
 
@@ -127,17 +117,11 @@ public class Main {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Redirection extraction
-    // -------------------------------------------------------------------------
-
     private static List<String> extractRedirections(List<String> tokens, Redirection redir) {
         List<String> result = new ArrayList<>();
         int i = 0;
-
         while (i < tokens.size()) {
             String t = tokens.get(i);
-
             if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
                 redir.stdoutFile = tokens.get(i + 1);
                 redir.stdoutAppend = false;
@@ -159,17 +143,11 @@ public class Main {
                 i++;
             }
         }
-
         return result;
     }
 
-    // -------------------------------------------------------------------------
-    // Built-in commands
-    // -------------------------------------------------------------------------
-
     private static void handleExit(List<String> args) {
-        int code = args.isEmpty() ? 0 : Integer.parseInt(args.get(0));
-        throw new ExitException(code);
+        throw new ExitException(args.isEmpty() ? 0 : Integer.parseInt(args.get(0)));
     }
 
     private static void handleEcho(List<String> args) {
@@ -178,332 +156,98 @@ public class Main {
 
     private static void handleType(List<String> args) {
         for (String arg : args) {
-            if (BUILTINS.contains(arg)) {
-                System.out.println(arg + " is a shell builtin");
-            } else {
+            if (BUILTINS.contains(arg)) System.out.println(arg + " is a shell builtin");
+            else {
                 String found = findInPath(arg);
-                if (found != null) {
-                    System.out.println(arg + " is " + found);
-                } else {
-                    System.out.println(arg + ": not found");
-                }
+                System.out.println(found != null ? arg + " is " + found : arg + ": not found");
             }
         }
     }
 
-    private static void handlePwd() {
-        System.out.println(System.getProperty("user.dir"));
-    }
+    private static void handlePwd() { System.out.println(System.getProperty("user.dir")); }
 
     private static void handleCd(List<String> args) {
         String target = args.isEmpty() ? System.getenv("HOME") : args.get(0);
-
         if (target == null) target = "/";
         if (target.equals("~")) target = System.getenv("HOME");
-        if (target == null) target = "/";
-
         File dir = new File(target);
-
-        if (!dir.isAbsolute()) {
-            dir = new File(System.getProperty("user.dir"), target);
-        }
-
-        if (!dir.exists()) {
-            System.err.println("cd: " + target + ": No such file or directory");
-        } else if (!dir.isDirectory()) {
-            System.err.println("cd: " + target + ": Not a directory");
-        } else {
-            System.setProperty(
-                    "user.dir",
-                    dir.toPath().normalize().toAbsolutePath().toString()
-            );
-        }
+        if (!dir.isAbsolute()) dir = new File(System.getProperty("user.dir"), target);
+        if (!dir.exists()) System.err.println("cd: " + target + ": No such file or directory");
+        else if (!dir.isDirectory()) System.err.println("cd: " + target + ": Not a directory");
+        else System.setProperty("user.dir", dir.toPath().normalize().toAbsolutePath().toString());
     }
-
-    // -------------------------------------------------------------------------
-    // Jobs
-    // -------------------------------------------------------------------------
 
     private static void handleJobs() {
         List<Job> jobsList = new ArrayList<>(backgroundJobs.values());
         List<Integer> toRemove = new ArrayList<>();
         int size = jobsList.size();
-        
         for (int i = 0; i < size; i++) {
             Job job = jobsList.get(i);
-            
-            // Determine the marker: '+' for the last, '-' for the second to last, ' ' otherwise
-            String marker = " ";
-            if (i == size - 1) {
-                marker = "+";
-            } else if (i == size - 2) {
-                marker = "-";
-            }
-            
+            String marker = (i == size - 1) ? "+" : (i == size - 2) ? "-" : " ";
             if (job.process.isAlive()) {
                 System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
             } else {
-                // Remove trailing '&' for finished jobs
-                String doneCommand = job.command;
-                if (doneCommand.endsWith("&")) {
-                    doneCommand = doneCommand.substring(0, doneCommand.length() - 1).trim();
-                }
-                System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Done", doneCommand);
-                toRemove.add(job.id); // Mark to remove it so it won't show up in subsequent `jobs` calls
+                String cmd = job.command.endsWith("&") ? job.command.substring(0, job.command.length() - 1).trim() : job.command;
+                System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Done", cmd);
+                toRemove.add(job.id);
             }
         }
-        
-        // Reap the finished jobs from tracking
-        for (Integer id : toRemove) {
-            backgroundJobs.remove(id);
-        }
+        for (Integer id : toRemove) backgroundJobs.remove(id);
     }
 
-    // -------------------------------------------------------------------------
-    // External commands
-    // -------------------------------------------------------------------------
-
-    private static void handleExternal(String cmd, List<String> args,
-                                       Redirection redir, boolean background, String originalLine) throws IOException {
-
+    private static void handleExternal(String cmd, List<String> args, Redirection redir, boolean background, String originalLine) throws IOException {
         String fullPath = findInPath(cmd);
-
         if (fullPath == null) {
             System.err.println(cmd + ": command not found");
             return;
         }
-
-        List<String> command = new ArrayList<>();
-        command.add(cmd);
+        List<String> command = new ArrayList<>(List.of(fullPath));
         command.addAll(args);
-
         ProcessBuilder pb = new ProcessBuilder(command);
-        pb.environment().put("PATH", System.getenv("PATH"));
-        pb.directory(new File(System.getProperty("user.dir")));
-
-        if (redir.stdoutFile != null) {
-            pb.redirectOutput(
-                    redir.stdoutAppend
-                            ? ProcessBuilder.Redirect.appendTo(new File(redir.stdoutFile))
-                            : ProcessBuilder.Redirect.to(new File(redir.stdoutFile))
-            );
-        } else {
-            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT); 
-        }
-
-        if (redir.stderrFile != null) {
-            pb.redirectError(
-                    redir.stderrAppend
-                            ? ProcessBuilder.Redirect.appendTo(new File(redir.stderrFile))
-                            : ProcessBuilder.Redirect.to(new File(redir.stderrFile))
-            );
-        } else {
-            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-        }
-
+        pb.redirectOutput(redir.stdoutFile != null ? (redir.stdoutAppend ? ProcessBuilder.Redirect.appendTo(new File(redir.stdoutFile)) : ProcessBuilder.Redirect.to(new File(redir.stdoutFile))) : ProcessBuilder.Redirect.INHERIT);
+        pb.redirectError(redir.stderrFile != null ? (redir.stderrAppend ? ProcessBuilder.Redirect.appendTo(new File(redir.stderrFile)) : ProcessBuilder.Redirect.to(new File(redir.stderrFile))) : ProcessBuilder.Redirect.INHERIT);
         Process process = pb.start();
-
         if (background) {
             int jobId = nextJobNumber++;
             backgroundJobs.put(jobId, new Job(jobId, process, originalLine));
             System.out.println("[" + jobId + "] " + process.pid());
-            return;
-        }
-
-        try {
-            process.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+        } else {
+            try { process.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Tokenizer
-    // -------------------------------------------------------------------------
 
     private static List<String> tokenize(String line) {
         List<String> tokens = new ArrayList<>();
-
-        int i = 0;
-        int len = line.length();
-
+        int i = 0, len = line.length();
         while (i < len) {
-
-            while (i < len && isWhitespace(line.charAt(i))) {
-                i++;
-            }
-
+            while (i < len && isWhitespace(line.charAt(i))) i++;
             if (i >= len) break;
-
             char c = line.charAt(i);
-
-            if (c == '&') {
-                tokens.add("&");
-                i++;
-                continue;
-            }
-
-            if (c == '1' && i + 2 < len &&
-                    line.charAt(i + 1) == '>' &&
-                    line.charAt(i + 2) == '>') {
-                tokens.add("1>>");
-                i += 3;
-                continue;
-            }
-
-            if (c == '1' && i + 1 < len &&
-                    line.charAt(i + 1) == '>') {
-                tokens.add("1>");
-                i += 2;
-                continue;
-            }
-
-            if (c == '2' && i + 2 < len &&
-                    line.charAt(i + 1) == '>' &&
-                    line.charAt(i + 2) == '>') {
-                tokens.add("2>>");
-                i += 3;
-                continue;
-            }
-
-            if (c == '2' && i + 1 < len &&
-                    line.charAt(i + 1) == '>') {
-                tokens.add("2>");
-                i += 2;
-                continue;
-            }
-
-            if (c == '>' && i + 1 < len &&
-                    line.charAt(i + 1) == '>') {
-                tokens.add(">>");
-                i += 2;
-                continue;
-            }
-
-            if (c == '>') {
-                tokens.add(">");
-                i++;
-                continue;
-            }
-
+            if (c == '&') { tokens.add("&"); i++; continue; }
+            if (c == '>') { tokens.add(">"); i++; continue; }
             StringBuilder token = new StringBuilder();
-
-            while (i < len && !isWhitespace(line.charAt(i))) {
-
-                c = line.charAt(i);
-
-                if (c == '&') {
-                    break;
-                }
-
-                if (c == '>') break;
-
-                if ((c == '1' || c == '2')
-                        && i + 1 < len
-                        && line.charAt(i + 1) == '>') {
-                    break;
-                }
-
-                if (c == '\'') {
-
-                    i++;
-
-                    while (i < len && line.charAt(i) != '\'') {
-                        token.append(line.charAt(i++));
-                    }
-
-                    if (i < len) i++;
-
-                } else if (c == '"') {
-
-                    i++;
-
-                    while (i < len && line.charAt(i) != '"') {
-
-                        if (line.charAt(i) == '\\' && i + 1 < len) {
-
-                            char next = line.charAt(i + 1);
-
-                            if (next == '"' ||
-                                    next == '\\' ||
-                                    next == '$' ||
-                                    next == '`' ||
-                                    next == '\n') {
-
-                                token.append(next);
-                                i += 2;
-
-                            } else {
-
-                                token.append('\\');
-                                i++;
-                            }
-
-                        } else {
-
-                            token.append(line.charAt(i++));
-                        }
-                    }
-
-                    if (i < len) i++;
-
-                } else if (c == '\\') {
-
-                    if (i + 1 < len) {
-                        token.append(line.charAt(i + 1));
-                        i += 2;
-                    } else {
-                        token.append(c);
-                        i++;
-                    }
-
-                } else {
-
-                    token.append(c);
-                    i++;
-                }
+            while (i < len && !isWhitespace(line.charAt(i)) && line.charAt(i) != '&' && line.charAt(i) != '>') {
+                token.append(line.charAt(i++));
             }
-
-            if (token.length() > 0) {
-                tokens.add(token.toString());
-            }
+            if (token.length() > 0) tokens.add(token.toString());
         }
-
         return tokens;
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static boolean isWhitespace(char c) {
-        return c == ' ' || c == '\t';
-    }
+    private static boolean isWhitespace(char c) { return c == ' ' || c == '\t'; }
 
     private static String findInPath(String cmd) {
         String pathEnv = System.getenv("PATH");
-
-        if (pathEnv == null) {
-            return null;
-        }
-
+        if (pathEnv == null) return null;
         for (String dir : pathEnv.split(":")) {
             Path full = Paths.get(dir, cmd);
-            File file = full.toFile();
-
-            if (file.isFile() && file.canExecute()) {
-                return full.toString();
-            }
+            if (full.toFile().isFile() && full.toFile().canExecute()) return full.toString();
         }
-
         return null;
     }
 
     private static class ExitException extends RuntimeException {
         final int code;
-
-        ExitException(int code) {
-            this.code = code;
-        }
+        ExitException(int code) { this.code = code; }
     }
 }

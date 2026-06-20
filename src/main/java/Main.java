@@ -225,9 +225,21 @@ public class Main {
     // -------------------------------------------------------------------------
 
     private static void handleJobs() {
-        for (Job job : backgroundJobs.values()) {
-            // "Running" padded to 24 characters using %-24s
-            System.out.printf("[%d]+  %-24s%s\n", job.id, "Running", job.command);
+        List<Job> jobsList = new ArrayList<>(backgroundJobs.values());
+        int size = jobsList.size();
+        
+        for (int i = 0; i < size; i++) {
+            Job job = jobsList.get(i);
+            
+            // Determine the marker: '+' for the last, '-' for the second to last, ' ' otherwise
+            String marker = " ";
+            if (i == size - 1) {
+                marker = "+";
+            } else if (i == size - 2) {
+                marker = "-";
+            }
+            
+            System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
         }
     }
 
@@ -277,7 +289,6 @@ public class Main {
 
         if (background) {
             int jobId = nextJobNumber++;
-            // Track the job
             backgroundJobs.put(jobId, new Job(jobId, process, originalLine));
             System.out.println("[" + jobId + "] " + process.pid());
             return;

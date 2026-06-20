@@ -183,8 +183,15 @@ public class Main {
                     OutputStream pIn = p.getOutputStream();
                     new Thread(() -> {
                         try {
-                            finalPrevIn.transferTo(pIn);
+                            byte[] buffer = new byte[8192];
+                            int read;
+                            // Manual loop with flush() is CRITICAL for streaming tools like tail -f
+                            while ((read = finalPrevIn.read(buffer)) != -1) {
+                                pIn.write(buffer, 0, read);
+                                pIn.flush(); 
+                            }
                         } catch (IOException ignored) {
+                            // Harmless: Expected when the receiving process (like head) closes its input and exits early
                         } finally {
                             try { pIn.close(); } catch (IOException ignored) {}
                             try { finalPrevIn.close(); } catch (IOException ignored) {}
@@ -293,12 +300,10 @@ public class Main {
             String marker = (i == size - 1) ? "+" : (i == size - 2) ? "-" : " ";
             
             if (job.process.isAlive()) {
-                // If called by `jobs`, print the running jobs. If called before prompt, stay silent.
                 if (printRunning) {
                     out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
                 }
             } else {
-                // Always print and reap finished jobs
                 String cmdStr = job.command;
                 if (cmdStr.endsWith("&")) {
                     cmdStr = cmdStr.substring(0, cmdStr.length() - 1).trim();
@@ -308,7 +313,6 @@ public class Main {
             }
         }
         
-        // Purge completed jobs
         for (Integer id : toRemove) {
             backgroundJobs.remove(id);
         }

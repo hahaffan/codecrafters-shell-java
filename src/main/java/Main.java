@@ -43,10 +43,12 @@ public class Main {
             if (input.startsWith("cd ")) {
                 String dir = input.substring(3).trim();
 
-                Path target = Paths.get(dir);
+                Path target;
 
-                if (!target.isAbsolute()) {
-                    target = currentDirectory.resolve(target);
+                if (Paths.get(dir).isAbsolute()) {
+                    target = Paths.get(dir);
+                } else {
+                    target = currentDirectory.resolve(dir);
                 }
 
                 target = target.normalize();

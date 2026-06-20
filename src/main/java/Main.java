@@ -27,6 +27,9 @@ public class Main {
         String line;
 
         while (true) {
+            // AUTOMATIC REAPING: Check and print done jobs right before the prompt
+            checkAndReapJobs(false);
+
             System.out.print("$ ");
             System.out.flush();
 
@@ -72,7 +75,6 @@ public class Main {
         String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
-        // Built-ins use System.setOut/setErr so we manage the streams manually
         if (BUILTINS.contains(cmd) && !background) {
             PrintStream originalOut = System.out;
             PrintStream originalErr = System.err;
@@ -98,7 +100,6 @@ public class Main {
                 if (fileErr != null) fileErr.close();
             }
         } else {
-            // External commands (or background builtins) use ProcessBuilder's native redirection
             handleExternal(cmd, cmdArgs, redir, background, originalLine);
         }
     }
@@ -157,7 +158,7 @@ public class Main {
                     redir.stderrFile = f;
                     redir.stderrAppend = t.contains(">>");
                 }
-                i += 2; // Skip both the operator and the filename
+                i += 2; 
             } else {
                 result.add(t);
                 i++;
@@ -167,6 +168,10 @@ public class Main {
     }
 
     private static void handleJobs() {
+        checkAndReapJobs(true);
+    }
+
+    private static void checkAndReapJobs(boolean printRunning) {
         List<Job> list = new ArrayList<>(backgroundJobs.values());
         List<Integer> toRemove = new ArrayList<>();
         int size = list.size();
@@ -176,8 +181,12 @@ public class Main {
             String marker = (i == size - 1) ? "+" : (i == size - 2) ? "-" : " ";
             
             if (job.process.isAlive()) {
-                System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
+                // If called by `jobs`, print the running jobs. If called before prompt, stay silent.
+                if (printRunning) {
+                    System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
+                }
             } else {
+                // Always print and reap finished jobs
                 String cmdStr = job.command;
                 if (cmdStr.endsWith("&")) {
                     cmdStr = cmdStr.substring(0, cmdStr.length() - 1).trim();
@@ -201,7 +210,7 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(cmd); // Ensure argv[0] matches command
+        command.add(cmd); 
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -235,9 +244,6 @@ public class Main {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Robust Tokenizer for Quoting and Escaping
-    // -------------------------------------------------------------------------
     private static List<String> tokenize(String line) {
         List<String> tokens = new ArrayList<>();
         int i = 0;
@@ -251,7 +257,6 @@ public class Main {
 
             char c = line.charAt(i);
 
-            // Handle independent operators
             if (c == '&') { tokens.add("&"); i++; continue; }
             if (c == '1' && i + 2 < len && line.charAt(i + 1) == '>' && line.charAt(i + 2) == '>') { tokens.add("1>>"); i += 3; continue; }
             if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') { tokens.add("1>"); i += 2; continue; }

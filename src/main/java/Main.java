@@ -16,16 +16,22 @@ public class Main {
         StringBuilder current = new StringBuilder();
 
         boolean inSingleQuotes = false;
+        boolean inDoubleQuotes = false;
 
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
 
-            if (ch == '\'') {
+            if (ch == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
                 continue;
             }
 
-            if (Character.isWhitespace(ch) && !inSingleQuotes) {
+            if (ch == '"' && !inSingleQuotes) {
+                inDoubleQuotes = !inDoubleQuotes;
+                continue;
+            }
+
+            if (Character.isWhitespace(ch) && !inSingleQuotes && !inDoubleQuotes) {
                 if (current.length() > 0) {
                     tokens.add(current.toString());
                     current.setLength(0);
@@ -107,7 +113,6 @@ public class Main {
                         || target.equals("type")
                         || target.equals("pwd")
                         || target.equals("cd")) {
-
                     System.out.println(target + " is a shell builtin");
                 } else {
                     String executable = findExecutable(target);

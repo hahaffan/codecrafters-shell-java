@@ -54,7 +54,9 @@ public class Main {
         for (String directory : directories) {
             Path path = Paths.get(directory, command);
 
-            if (Files.exists(path) && Files.isRegularFile(path) && Files.isExecutable(path)) {
+            if (Files.exists(path)
+                    && Files.isRegularFile(path)
+                    && Files.isExecutable(path)) {
                 return path.toString();
             }
         }
@@ -107,6 +109,7 @@ public class Main {
                         || target.equals("type")
                         || target.equals("pwd")
                         || target.equals("cd")) {
+
                     System.out.println(target + " is a shell builtin");
                 } else {
                     String executable = findExecutable(target);
@@ -127,7 +130,10 @@ public class Main {
                 String target = parts.get(1);
 
                 if (target.equals("~")) {
-                    target = System.getProperty("user.home");
+                    String home = System.getenv("HOME");
+                    if (home != null) {
+                        target = home;
+                    }
                 }
 
                 Path newPath;

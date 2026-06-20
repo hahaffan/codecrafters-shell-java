@@ -41,6 +41,7 @@ public class Main {
                 } else {
                     System.out.println("cd: " + dir + ": No such file or directory");
                 }
+
                 continue;
             }
 
@@ -94,18 +95,20 @@ public class Main {
 
                     if (file.exists() && file.canExecute()) {
                         List<String> cmd = new ArrayList<>();
-                        cmd.add(file.getAbsolutePath());
+                        cmd.add(command);
 
                         for (int i = 1; i < parts.length; i++) {
                             cmd.add(parts[i]);
                         }
 
-                        Process process = new ProcessBuilder(cmd)
-                                .directory(currentDirectory.toFile())
-                                .inheritIO()
-                                .start();
+                        ProcessBuilder pb = new ProcessBuilder(cmd);
+                        pb.directory(currentDirectory.toFile());
+                        pb.inheritIO();
+                        pb.environment().put("PATH", pathEnv);
 
+                        Process process = pb.start();
                         process.waitFor();
+
                         executed = true;
                         break;
                     }
@@ -113,7 +116,7 @@ public class Main {
             }
 
             if (!executed) {
-                System.out.println(input + ": command not found");
+                System.out.println(command + ": command not found");
             }
         }
 

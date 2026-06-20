@@ -140,7 +140,7 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(cmd);
+        command.add(fullPath);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);

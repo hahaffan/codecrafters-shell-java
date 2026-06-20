@@ -15,14 +15,23 @@ public class Main {
         while (true) {
             System.out.print("$ ");
 
-            String input = scanner.nextLine();
+            if (!scanner.hasNextLine()) {
+                break;
+            }
 
-            if (input.equals("exit 0")) {
+            String input = scanner.nextLine().trim();
+
+            if (input.equals("exit") || input.equals("exit 0")) {
                 break;
             }
 
             if (input.startsWith("echo ")) {
                 System.out.println(input.substring(5));
+                continue;
+            }
+
+            if (input.equals("echo")) {
+                System.out.println();
                 continue;
             }
 
@@ -36,8 +45,14 @@ public class Main {
 
                 Path target = Paths.get(dir);
 
+                if (!target.isAbsolute()) {
+                    target = currentDirectory.resolve(target);
+                }
+
+                target = target.normalize();
+
                 if (Files.exists(target) && Files.isDirectory(target)) {
-                    currentDirectory = target.normalize();
+                    currentDirectory = target;
                 } else {
                     System.out.println("cd: " + dir + ": No such file or directory");
                 }
@@ -81,7 +96,7 @@ public class Main {
                 continue;
             }
 
-            String[] parts = input.split(" ");
+            String[] parts = input.split("\\s+");
             String command = parts[0];
 
             String pathEnv = System.getenv("PATH");
@@ -95,7 +110,8 @@ public class Main {
 
                     if (file.exists() && file.canExecute()) {
                         List<String> cmd = new ArrayList<>();
-                        cmd.add(command);
+
+                        cmd.add(file.getAbsolutePath());
 
                         for (int i = 1; i < parts.length; i++) {
                             cmd.add(parts[i]);
@@ -104,7 +120,6 @@ public class Main {
                         ProcessBuilder pb = new ProcessBuilder(cmd);
                         pb.directory(currentDirectory.toFile());
                         pb.inheritIO();
-                        pb.environment().put("PATH", pathEnv);
 
                         Process process = pb.start();
                         process.waitFor();

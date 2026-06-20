@@ -225,13 +225,14 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(cmd); // Passes the base command name to argv[0] to satisfy the test
+        command.add(cmd);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.directory(new File(System.getProperty("user.dir")));
 
+        // This INHERIT logic natively handles Stage #SI2's background output requirement!
         if (redir.stdoutFile != null) {
             pb.redirectOutput(
                     redir.stdoutAppend
@@ -239,7 +240,7 @@ public class Main {
                             : ProcessBuilder.Redirect.to(new File(redir.stdoutFile))
             );
         } else {
-            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT); 
         }
 
         if (redir.stderrFile != null) {

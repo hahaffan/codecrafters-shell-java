@@ -8,6 +8,21 @@ public class Main {
             "echo", "exit", "type", "pwd", "cd", "jobs"));
 
     private static int nextJobNumber = 1;
+    
+    // Track background jobs
+    private static final Map<Integer, Job> backgroundJobs = new LinkedHashMap<>();
+
+    private static class Job {
+        int id;
+        Process process;
+        String command;
+
+        Job(int id, Process process, String command) {
+            this.id = id;
+            this.process = process;
+            this.command = command;
+        }
+    }
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
@@ -47,6 +62,9 @@ public class Main {
         line = line.trim();
         if (line.isEmpty()) return;
 
+        // Save the original line exactly as typed so `jobs` can display it
+        String originalLine = line;
+
         List<String> tokens = tokenize(line);
         if (tokens.isEmpty()) return;
 
@@ -79,7 +97,7 @@ public class Main {
                 System.setErr(fileErr);
             }
 
-            dispatch(cmd, cmdArgs, redir, background);
+            dispatch(cmd, cmdArgs, redir, background, originalLine);
 
         } finally {
             if (fileOut != null) {
@@ -97,7 +115,7 @@ public class Main {
     }
 
     private static void dispatch(String cmd, List<String> cmdArgs,
-                                 Redirection redir, boolean background) throws IOException {
+                                 Redirection redir, boolean background, String originalLine) throws IOException {
         switch (cmd) {
             case "exit" -> handleExit(cmdArgs);
             case "echo" -> handleEcho(cmdArgs);
@@ -105,7 +123,7 @@ public class Main {
             case "pwd" -> handlePwd();
             case "cd" -> handleCd(cmdArgs);
             case "jobs" -> handleJobs();
-            default -> handleExternal(cmd, cmdArgs, redir, background);
+            default -> handleExternal(cmd, cmdArgs, redir, background, originalLine);
         }
     }
 
@@ -207,7 +225,10 @@ public class Main {
     // -------------------------------------------------------------------------
 
     private static void handleJobs() {
-        // Not required for this stage
+        for (Job job : backgroundJobs.values()) {
+            // "Running" padded to 24 characters using %-24s
+            System.out.printf("[%d]+  %-24s%s\n", job.id, "Running", job.command);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -215,7 +236,7 @@ public class Main {
     // -------------------------------------------------------------------------
 
     private static void handleExternal(String cmd, List<String> args,
-                                       Redirection redir, boolean background) throws IOException {
+                                       Redirection redir, boolean background, String originalLine) throws IOException {
 
         String fullPath = findInPath(cmd);
 
@@ -232,7 +253,6 @@ public class Main {
         pb.environment().put("PATH", System.getenv("PATH"));
         pb.directory(new File(System.getProperty("user.dir")));
 
-        // This INHERIT logic natively handles Stage #SI2's background output requirement!
         if (redir.stdoutFile != null) {
             pb.redirectOutput(
                     redir.stdoutAppend
@@ -256,7 +276,10 @@ public class Main {
         Process process = pb.start();
 
         if (background) {
-            System.out.println("[" + nextJobNumber++ + "] " + process.pid());
+            int jobId = nextJobNumber++;
+            // Track the job
+            backgroundJobs.put(jobId, new Job(jobId, process, originalLine));
+            System.out.println("[" + jobId + "] " + process.pid());
             return;
         }
 

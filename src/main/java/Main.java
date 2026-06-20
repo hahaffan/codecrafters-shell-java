@@ -86,9 +86,7 @@ public class Main {
             String command = parts.get(0);
 
             if (command.equals("exit")) {
-                if (parts.size() > 1 && parts.get(1).equals("0")) {
-                    break;
-                }
+                break;
             } else if (command.equals("echo")) {
                 for (int i = 1; i < parts.size(); i++) {
                     if (i > 1) {

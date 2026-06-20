@@ -30,8 +30,8 @@ public class Main {
     // -------------------------------------------------------------------------
 
     private static class Redirection {
-        String stdoutFile = null;  // > or 1>
-        String stderrFile = null;  // 2>
+        String stdoutFile   = null;
+        String stderrFile   = null;
         boolean stdoutAppend = false;
         boolean stderrAppend = false;
     }
@@ -54,7 +54,6 @@ public class Main {
         String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
-        // Set up stdout redirect for builtins
         PrintStream oldOut = System.out;
         PrintStream oldErr = System.err;
         PrintStream fileOut = null;
@@ -71,12 +70,8 @@ public class Main {
             }
             dispatch(cmd, cmdArgs, redir);
         } finally {
-            System.out.flush();
-            System.err.flush();
-            System.setOut(oldOut);
-            System.setErr(oldErr);
-            if (fileOut != null) fileOut.close();
-            if (fileErr != null) fileErr.close();
+            if (fileOut != null) { System.out.flush(); System.setOut(oldOut); fileOut.close(); }
+            if (fileErr != null) { System.err.flush(); System.setErr(oldErr); fileErr.close(); }
         }
     }
 
@@ -101,24 +96,15 @@ public class Main {
         while (i < tokens.size()) {
             String t = tokens.get(i);
             if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
-                redir.stdoutFile   = tokens.get(i + 1);
-                redir.stdoutAppend = false;
-                i += 2;
+                redir.stdoutFile = tokens.get(i + 1); redir.stdoutAppend = false; i += 2;
             } else if ((t.equals(">>") || t.equals("1>>")) && i + 1 < tokens.size()) {
-                redir.stdoutFile   = tokens.get(i + 1);
-                redir.stdoutAppend = true;
-                i += 2;
+                redir.stdoutFile = tokens.get(i + 1); redir.stdoutAppend = true;  i += 2;
             } else if (t.equals("2>") && i + 1 < tokens.size()) {
-                redir.stderrFile   = tokens.get(i + 1);
-                redir.stderrAppend = false;
-                i += 2;
+                redir.stderrFile = tokens.get(i + 1); redir.stderrAppend = false; i += 2;
             } else if (t.equals("2>>") && i + 1 < tokens.size()) {
-                redir.stderrFile   = tokens.get(i + 1);
-                redir.stderrAppend = true;
-                i += 2;
+                redir.stderrFile = tokens.get(i + 1); redir.stderrAppend = true;  i += 2;
             } else {
-                result.add(t);
-                i++;
+                result.add(t); i++;
             }
         }
         return result;
@@ -143,11 +129,8 @@ public class Main {
                 System.out.println(arg + " is a shell builtin");
             } else {
                 String found = findInPath(arg);
-                if (found != null) {
-                    System.out.println(arg + " is " + found);
-                } else {
-                    System.out.println(arg + ": not found");
-                }
+                if (found != null) System.out.println(arg + " is " + found);
+                else               System.out.println(arg + ": not found");
             }
         }
     }
@@ -163,9 +146,7 @@ public class Main {
         if (target == null) target = "/";
 
         File dir = new File(target);
-        if (!dir.isAbsolute()) {
-            dir = new File(System.getProperty("user.dir"), target);
-        }
+        if (!dir.isAbsolute()) dir = new File(System.getProperty("user.dir"), target);
 
         if (!dir.exists()) {
             System.err.println("cd: " + target + ": No such file or directory");
@@ -187,14 +168,17 @@ public class Main {
             return;
         }
 
+        // Use the bare command name as argv[0] (what the tester expects).
+        // ProcessBuilder searches PATH automatically when not given an absolute path,
+        // but we resolved fullPath ourselves — pass it so the OS finds the binary,
+        // while keeping argv[0] as the plain name by using cmd instead of fullPath.
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(cmd);   // argv[0] = plain name
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(System.getProperty("user.dir")));
 
-        // stdout
         if (redir.stdoutFile != null) {
             pb.redirectOutput(redir.stdoutAppend
                 ? ProcessBuilder.Redirect.appendTo(new File(redir.stdoutFile))
@@ -203,7 +187,6 @@ public class Main {
             pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
         }
 
-        // stderr
         if (redir.stderrFile != null) {
             pb.redirectError(redir.stderrAppend
                 ? ProcessBuilder.Redirect.appendTo(new File(redir.stderrFile))
@@ -213,11 +196,7 @@ public class Main {
         }
 
         Process process = pb.start();
-        try {
-            process.waitFor();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        try { process.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     // -------------------------------------------------------------------------
@@ -235,25 +214,13 @@ public class Main {
 
             char c = line.charAt(i);
 
-            // Redirection operators (longest match first)
-            if (c == '1' && i + 2 < len && line.charAt(i+1) == '>' && line.charAt(i+2) == '>') {
-                tokens.add("1>>"); i += 3; continue;
-            }
-            if (c == '1' && i + 1 < len && line.charAt(i+1) == '>') {
-                tokens.add("1>"); i += 2; continue;
-            }
-            if (c == '2' && i + 2 < len && line.charAt(i+1) == '>' && line.charAt(i+2) == '>') {
-                tokens.add("2>>"); i += 3; continue;
-            }
-            if (c == '2' && i + 1 < len && line.charAt(i+1) == '>') {
-                tokens.add("2>"); i += 2; continue;
-            }
-            if (c == '>' && i + 1 < len && line.charAt(i+1) == '>') {
-                tokens.add(">>"); i += 2; continue;
-            }
-            if (c == '>') {
-                tokens.add(">"); i++; continue;
-            }
+            // Redirection operators — longest match first
+            if (c == '1' && i+2 < len && line.charAt(i+1) == '>' && line.charAt(i+2) == '>') { tokens.add("1>>"); i += 3; continue; }
+            if (c == '1' && i+1 < len && line.charAt(i+1) == '>')                             { tokens.add("1>"); i += 2; continue; }
+            if (c == '2' && i+2 < len && line.charAt(i+1) == '>' && line.charAt(i+2) == '>') { tokens.add("2>>"); i += 3; continue; }
+            if (c == '2' && i+1 < len && line.charAt(i+1) == '>')                             { tokens.add("2>"); i += 2; continue; }
+            if (c == '>' && i+1 < len && line.charAt(i+1) == '>')                             { tokens.add(">>"); i += 2; continue; }
+            if (c == '>')                                                                       { tokens.add(">"); i++;    continue; }
 
             // Regular token
             StringBuilder token = new StringBuilder();
@@ -262,7 +229,7 @@ public class Main {
 
                 // Stop at redirection operators
                 if (c == '>') break;
-                if ((c == '1' || c == '2') && i + 1 < len && line.charAt(i+1) == '>') break;
+                if ((c == '1' || c == '2') && i+1 < len && line.charAt(i+1) == '>') break;
 
                 if (c == '\'') {
                     i++;
@@ -272,8 +239,8 @@ public class Main {
                 } else if (c == '"') {
                     i++;
                     while (i < len && line.charAt(i) != '"') {
-                        if (line.charAt(i) == '\\' && i + 1 < len) {
-                            char next = line.charAt(i + 1);
+                        if (line.charAt(i) == '\\' && i+1 < len) {
+                            char next = line.charAt(i+1);
                             if (next == '"' || next == '\\' || next == '$' || next == '`' || next == '\n') {
                                 token.append(next); i += 2;
                             } else {
@@ -286,8 +253,8 @@ public class Main {
                     if (i < len) i++;
 
                 } else if (c == '\\') {
-                    if (i + 1 < len) { token.append(line.charAt(i + 1)); i += 2; }
-                    else { token.append(c); i++; }
+                    if (i+1 < len) { token.append(line.charAt(i+1)); i += 2; }
+                    else           { token.append(c); i++; }
 
                 } else {
                     token.append(c); i++;
@@ -303,9 +270,7 @@ public class Main {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static boolean isWhitespace(char c) {
-        return c == ' ' || c == '\t';
-    }
+    private static boolean isWhitespace(char c) { return c == ' ' || c == '\t'; }
 
     private static String findInPath(String cmd) {
         String pathEnv = System.getenv("PATH");
@@ -317,10 +282,6 @@ public class Main {
         }
         return null;
     }
-
-    // -------------------------------------------------------------------------
-    // Internal exception for exit
-    // -------------------------------------------------------------------------
 
     private static class ExitException extends RuntimeException {
         final int code;

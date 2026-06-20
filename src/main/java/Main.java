@@ -2,7 +2,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 
-public class Shell {
+public class Main {
 
     private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("echo", "exit", "type", "pwd", "cd"));
 
@@ -36,7 +36,7 @@ public class Shell {
         List<String> tokens = tokenize(line);
         if (tokens.isEmpty()) return;
 
-        String cmd  = tokens.get(0);
+        String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
         switch (cmd) {
@@ -156,7 +156,7 @@ public class Shell {
                     if (i < len) i++; // consume closing '
 
                 } else if (c == '"') {
-                    // Double-quote: backslash only escapes special chars
+                    // Double-quote: backslash only escapes " \ $ ` and newline
                     i++;
                     while (i < len && line.charAt(i) != '"') {
                         if (line.charAt(i) == '\\' && i + 1 < len) {
@@ -166,7 +166,7 @@ public class Shell {
                                 token.append(next);
                                 i += 2;
                             } else {
-                                // Backslash kept literally
+                                // Backslash is kept literally
                                 token.append('\\');
                                 i++;
                             }
@@ -177,7 +177,7 @@ public class Shell {
                     if (i < len) i++; // consume closing "
 
                 } else if (c == '\\') {
-                    // Outside quotes: backslash escapes next char
+                    // Outside quotes: backslash escapes the next character
                     if (i + 1 < len) {
                         token.append(line.charAt(i + 1));
                         i += 2;

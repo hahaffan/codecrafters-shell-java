@@ -225,10 +225,11 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(fullPath); // Use fullPath here to guarantee correct executable location
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
+        pb.environment().put("PATH", System.getenv("PATH"));
         pb.directory(new File(System.getProperty("user.dir")));
 
         if (redir.stdoutFile != null) {

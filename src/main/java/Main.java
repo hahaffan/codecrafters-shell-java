@@ -25,13 +25,13 @@ public class Main {
                 break;
             }
 
-            if (input.startsWith("echo ")) {
-                System.out.println(input.substring(5));
+            if (input.equals("echo")) {
+                System.out.println();
                 continue;
             }
 
-            if (input.equals("echo")) {
-                System.out.println();
+            if (input.startsWith("echo ")) {
+                System.out.println(input.substring(5));
                 continue;
             }
 
@@ -110,8 +110,7 @@ public class Main {
 
                     if (file.exists() && file.canExecute()) {
                         List<String> cmd = new ArrayList<>();
-
-                        cmd.add(file.getAbsolutePath());
+                        cmd.add(command);
 
                         for (int i = 1; i < parts.length; i++) {
                             cmd.add(parts[i]);
@@ -120,6 +119,7 @@ public class Main {
                         ProcessBuilder pb = new ProcessBuilder(cmd);
                         pb.directory(currentDirectory.toFile());
                         pb.inheritIO();
+                        pb.environment().put("PATH", pathEnv);
 
                         Process process = pb.start();
                         process.waitFor();

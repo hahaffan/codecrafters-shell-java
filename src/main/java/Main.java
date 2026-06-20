@@ -67,39 +67,127 @@ public class Main {
             tokens.remove(tokens.size() - 1);
         }
 
-        Redirection redir = new Redirection();
-        tokens = extractRedirections(tokens, redir);
-        if (tokens.isEmpty()) return;
+        // Split tokens into pipelines
+        List<List<String>> pipelines = new ArrayList<>();
+        List<String> currentSegment = new ArrayList<>();
+        
+        for (String t : tokens) {
+            if (t.equals("|")) {
+                pipelines.add(currentSegment);
+                currentSegment = new ArrayList<>();
+            } else {
+                currentSegment.add(t);
+            }
+        }
+        pipelines.add(currentSegment);
 
-        String cmd = tokens.get(0);
-        List<String> cmdArgs = tokens.subList(1, tokens.size());
+        // If it's just a single command, run it normally
+        if (pipelines.size() == 1) {
+            List<String> segment = pipelines.get(0);
+            Redirection redir = new Redirection();
+            segment = extractRedirections(segment, redir);
+            if (segment.isEmpty()) return;
 
-        if (BUILTINS.contains(cmd) && !background) {
-            PrintStream originalOut = System.out;
-            PrintStream originalErr = System.err;
-            PrintStream fileOut = null;
-            PrintStream fileErr = null;
+            String cmd = segment.get(0);
+            List<String> cmdArgs = segment.subList(1, segment.size());
 
-            try {
-                if (redir.stdoutFile != null) {
-                    fileOut = new PrintStream(new FileOutputStream(redir.stdoutFile, redir.stdoutAppend));
-                    System.setOut(fileOut);
+            // Handle built-ins
+            if (BUILTINS.contains(cmd) && !background) {
+                PrintStream originalOut = System.out;
+                PrintStream originalErr = System.err;
+                PrintStream fileOut = null;
+                PrintStream fileErr = null;
+
+                try {
+                    if (redir.stdoutFile != null) {
+                        fileOut = new PrintStream(new FileOutputStream(redir.stdoutFile, redir.stdoutAppend));
+                        System.setOut(fileOut);
+                    }
+                    if (redir.stderrFile != null) {
+                        fileErr = new PrintStream(new FileOutputStream(redir.stderrFile, redir.stderrAppend));
+                        System.setErr(fileErr);
+                    }
+                    dispatch(cmd, cmdArgs);
+                } finally {
+                    System.out.flush();
+                    System.err.flush();
+                    System.setOut(originalOut);
+                    System.setErr(originalErr);
+                    if (fileOut != null) fileOut.close();
+                    if (fileErr != null) fileErr.close();
                 }
-                if (redir.stderrFile != null) {
-                    fileErr = new PrintStream(new FileOutputStream(redir.stderrFile, redir.stderrAppend));
-                    System.setErr(fileErr);
-                }
-                dispatch(cmd, cmdArgs);
-            } finally {
-                System.out.flush();
-                System.err.flush();
-                System.setOut(originalOut);
-                System.setErr(originalErr);
-                if (fileOut != null) fileOut.close();
-                if (fileErr != null) fileErr.close();
+            } else {
+                handleExternal(cmd, cmdArgs, redir, background, originalLine);
             }
         } else {
-            handleExternal(cmd, cmdArgs, redir, background, originalLine);
+            // It's a pipeline of 2 or more commands
+            handlePipeline(pipelines, background, originalLine);
+        }
+    }
+
+    private static void handlePipeline(List<List<String>> segments, boolean background, String originalLine) throws IOException {
+        List<ProcessBuilder> builders = new ArrayList<>();
+        
+        for (int i = 0; i < segments.size(); i++) {
+            List<String> segment = segments.get(i);
+            Redirection redir = new Redirection();
+            segment = extractRedirections(segment, redir);
+            if (segment.isEmpty()) continue;
+            
+            String cmd = segment.get(0);
+            List<String> args = segment.subList(1, segment.size());
+            
+            String fullPath = findInPath(cmd);
+            if (fullPath == null) {
+                System.err.println(cmd + ": command not found");
+                return; // Abort entire pipeline setup if one command is missing
+            }
+            
+            List<String> fullCmd = new ArrayList<>();
+            fullCmd.add(cmd);
+            fullCmd.addAll(args);
+            
+            ProcessBuilder pb = new ProcessBuilder(fullCmd);
+            pb.environment().put("PATH", System.getenv("PATH"));
+            pb.directory(new File(System.getProperty("user.dir")));
+            
+            // Handle redirections for the segment
+            if (redir.stdoutFile != null) {
+                pb.redirectOutput(redir.stdoutAppend ? ProcessBuilder.Redirect.appendTo(new File(redir.stdoutFile)) : ProcessBuilder.Redirect.to(new File(redir.stdoutFile)));
+            } else if (i == segments.size() - 1) {
+                // The last process in the pipeline prints to terminal
+                pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+            }
+            
+            if (redir.stderrFile != null) {
+                pb.redirectError(redir.stderrAppend ? ProcessBuilder.Redirect.appendTo(new File(redir.stderrFile)) : ProcessBuilder.Redirect.to(new File(redir.stderrFile)));
+            } else {
+                pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            }
+            
+            builders.add(pb);
+        }
+
+        if (builders.isEmpty()) return;
+
+        // startPipeline handles the plumbing (stdin/stdout) between processes automatically!
+        List<Process> processes = ProcessBuilder.startPipeline(builders);
+
+        if (background) {
+            // Track the last process for background job status
+            int jobId = backgroundJobs.isEmpty() ? 1 : Collections.max(backgroundJobs.keySet()) + 1;
+            Process lastProcess = processes.get(processes.size() - 1);
+            backgroundJobs.put(jobId, new Job(jobId, lastProcess, originalLine));
+            System.out.println("[" + jobId + "] " + lastProcess.pid());
+        } else {
+            // Wait for all processes to finish sequentially
+            for (Process p : processes) {
+                try {
+                    p.waitFor();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
     }
 
@@ -180,12 +268,10 @@ public class Main {
             String marker = (i == size - 1) ? "+" : (i == size - 2) ? "-" : " ";
             
             if (job.process.isAlive()) {
-                // If called by `jobs`, print the running jobs. If called before prompt, stay silent.
                 if (printRunning) {
                     System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
                 }
             } else {
-                // Always print and reap finished jobs
                 String cmdStr = job.command;
                 if (cmdStr.endsWith("&")) {
                     cmdStr = cmdStr.substring(0, cmdStr.length() - 1).trim();
@@ -195,7 +281,6 @@ public class Main {
             }
         }
         
-        // Purge completed jobs
         for (Integer id : toRemove) {
             backgroundJobs.remove(id);
         }
@@ -231,7 +316,6 @@ public class Main {
         Process process = pb.start();
 
         if (background) {
-            // RECYCLING JOB NUMBERS: Max current key + 1, or 1 if empty
             int jobId = backgroundJobs.isEmpty() ? 1 : Collections.max(backgroundJobs.keySet()) + 1;
             backgroundJobs.put(jobId, new Job(jobId, process, originalLine));
             System.out.println("[" + jobId + "] " + process.pid());
@@ -257,6 +341,7 @@ public class Main {
 
             char c = line.charAt(i);
 
+            if (c == '|') { tokens.add("|"); i++; continue; }
             if (c == '&') { tokens.add("&"); i++; continue; }
             if (c == '1' && i + 2 < len && line.charAt(i + 1) == '>' && line.charAt(i + 2) == '>') { tokens.add("1>>"); i += 3; continue; }
             if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') { tokens.add("1>"); i += 2; continue; }
@@ -270,7 +355,7 @@ public class Main {
             while (i < len && !isWhitespace(line.charAt(i))) {
                 c = line.charAt(i);
 
-                if (c == '&' || c == '>') break;
+                if (c == '&' || c == '>' || c == '|') break;
                 if ((c == '1' || c == '2') && i + 1 < len && line.charAt(i + 1) == '>') break;
 
                 if (c == '\'') {

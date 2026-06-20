@@ -140,11 +140,21 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(cmd);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(System.getProperty("user.dir")));
+
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            String executableDir = Paths.get(fullPath).getParent().toString();
+            pb.environment().put(
+                    "PATH",
+                    executableDir + File.pathSeparator + pathEnv
+            );
+        }
+
         pb.inheritIO();
 
         Process process = pb.start();

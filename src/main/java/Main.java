@@ -31,6 +31,7 @@ public class Main {
 
     private static class Redirection {
         String stdoutFile = null;
+        String stderrFile = null;
     }
 
     // -------------------------------------------------------------------------
@@ -51,20 +52,37 @@ public class Main {
         String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
-        if (redir.stdoutFile != null) {
-            // For builtins: swap System.out to write to the file
-            PrintStream fileOut = new PrintStream(new FileOutputStream(redir.stdoutFile, false));
-            PrintStream oldOut  = System.out;
-            System.setOut(fileOut);
-            try {
-                dispatch(cmd, cmdArgs, redir);
-            } finally {
+        PrintStream oldOut = System.out;
+        PrintStream oldErr = System.err;
+
+        PrintStream fileOut = null;
+        PrintStream fileErr = null;
+
+        try {
+            if (redir.stdoutFile != null) {
+                fileOut = new PrintStream(new FileOutputStream(redir.stdoutFile, false));
+                System.setOut(fileOut);
+            }
+
+            if (redir.stderrFile != null) {
+                fileErr = new PrintStream(new FileOutputStream(redir.stderrFile, false));
+                System.setErr(fileErr);
+            }
+
+            dispatch(cmd, cmdArgs, redir);
+
+        } finally {
+            if (fileOut != null) {
                 System.out.flush();
                 System.setOut(oldOut);
                 fileOut.close();
             }
-        } else {
-            dispatch(cmd, cmdArgs, redir);
+
+            if (fileErr != null) {
+                System.err.flush();
+                System.setErr(oldErr);
+                fileErr.close();
+            }
         }
     }
 
@@ -85,17 +103,24 @@ public class Main {
 
     private static List<String> extractRedirections(List<String> tokens, Redirection redir) {
         List<String> result = new ArrayList<>();
+
         int i = 0;
+
         while (i < tokens.size()) {
             String t = tokens.get(i);
+
             if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
                 redir.stdoutFile = tokens.get(i + 1);
+                i += 2;
+            } else if (t.equals("2>") && i + 1 < tokens.size()) {
+                redir.stderrFile = tokens.get(i + 1);
                 i += 2;
             } else {
                 result.add(t);
                 i++;
             }
         }
+
         return result;
     }
 
@@ -133,11 +158,13 @@ public class Main {
 
     private static void handleCd(List<String> args) {
         String target = args.isEmpty() ? System.getenv("HOME") : args.get(0);
+
         if (target == null) target = "/";
         if (target.equals("~")) target = System.getenv("HOME");
         if (target == null) target = "/";
 
         File dir = new File(target);
+
         if (!dir.isAbsolute()) {
             dir = new File(System.getProperty("user.dir"), target);
         }
@@ -147,7 +174,8 @@ public class Main {
         } else if (!dir.isDirectory()) {
             System.err.println("cd: " + target + ": Not a directory");
         } else {
-            System.setProperty("user.dir", dir.toPath().normalize().toAbsolutePath().toString());
+            System.setProperty("user.dir",
+                    dir.toPath().normalize().toAbsolutePath().toString());
         }
     }
 
@@ -155,29 +183,38 @@ public class Main {
     // External commands
     // -------------------------------------------------------------------------
 
-    private static void handleExternal(String cmd, List<String> args, Redirection redir) throws IOException {
+    private static void handleExternal(String cmd,
+                                       List<String> args,
+                                       Redirection redir) throws IOException {
+
         String fullPath = findInPath(cmd);
+
         if (fullPath == null) {
             System.err.println(cmd + ": command not found");
             return;
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(cmd);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(System.getProperty("user.dir")));
 
         if (redir.stdoutFile != null) {
-            // stdout → file, stderr → terminal
             pb.redirectOutput(new File(redir.stdoutFile));
-            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
         } else {
-            pb.inheritIO();
+            pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        }
+
+        if (redir.stderrFile != null) {
+            pb.redirectError(new File(redir.stderrFile));
+        } else {
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
         }
 
         Process process = pb.start();
+
         try {
             process.waitFor();
         } catch (InterruptedException e) {
@@ -200,26 +237,32 @@ public class Main {
 
             char c = line.charAt(i);
 
-            // Standalone redirection operators
             if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') {
                 tokens.add("1>");
                 i += 2;
                 continue;
             }
+
+            if (c == '2' && i + 1 < len && line.charAt(i + 1) == '>') {
+                tokens.add("2>");
+                i += 2;
+                continue;
+            }
+
             if (c == '>') {
                 tokens.add(">");
                 i++;
                 continue;
             }
 
-            // Regular token
             StringBuilder token = new StringBuilder();
+
             while (i < len && !isWhitespace(line.charAt(i))) {
                 c = line.charAt(i);
 
-                // Break on bare redirection operators
                 if (c == '>') break;
                 if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') break;
+                if (c == '2' && i + 1 < len && line.charAt(i + 1) == '>') break;
 
                 if (c == '\'') {
                     i++;
@@ -233,6 +276,7 @@ public class Main {
                     while (i < len && line.charAt(i) != '"') {
                         if (line.charAt(i) == '\\' && i + 1 < len) {
                             char next = line.charAt(i + 1);
+
                             if (next == '"' || next == '\\' || next == '$'
                                     || next == '`' || next == '\n') {
                                 token.append(next);
@@ -261,7 +305,10 @@ public class Main {
                     i++;
                 }
             }
-            if (token.length() > 0) tokens.add(token.toString());
+
+            if (token.length() > 0) {
+                tokens.add(token.toString());
+            }
         }
 
         return tokens;
@@ -278,13 +325,16 @@ public class Main {
     private static String findInPath(String cmd) {
         String pathEnv = System.getenv("PATH");
         if (pathEnv == null) return null;
+
         for (String dir : pathEnv.split(":")) {
             Path full = Paths.get(dir, cmd);
             File file = full.toFile();
+
             if (file.isFile() && file.canExecute()) {
                 return full.toString();
             }
         }
+
         return null;
     }
 
@@ -294,6 +344,9 @@ public class Main {
 
     private static class ExitException extends RuntimeException {
         final int code;
-        ExitException(int code) { this.code = code; }
+
+        ExitException(int code) {
+            this.code = code;
+        }
     }
 }

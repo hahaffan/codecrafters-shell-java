@@ -1,77 +1,82 @@
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Scanner;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
 
 public class Main {
-    
-    // 1. Manually track the current working directory
-    private static Path currentDir = Paths.get(System.getProperty("user.dir")).toAbsolutePath();
+    private static Path currentDirectory = Paths.get(System.getProperty("user.dir"));
 
     public static void main(String[] args) throws Exception {
         Scanner scanner = new Scanner(System.in);
 
-        // The Shell REPL (Read-Eval-Print Loop)
         while (true) {
             System.out.print("$ ");
-            
-            if (!scanner.hasNextLine()) {
+
+            String input = scanner.nextLine().trim();
+
+            if (input.equals("exit 0")) {
                 break;
             }
-            
-            String input = scanner.nextLine().trim();
-            if (input.isEmpty()) {
+
+            if (input.startsWith("echo ")) {
+                System.out.println(input.substring(5));
                 continue;
             }
 
-            // Split the input into command and arguments
-            String[] commandArgs = input.split("\\s+");
-            String command = commandArgs[0];
-
-            switch (command) {
-                case "exit":
-                    if (commandArgs.length > 1 && commandArgs[1].equals("0")) {
-                        System.exit(0);
-                    }
-                    break;
-                    
-                case "pwd":
-                    // 2. pwd must print our tracked directory, NOT a cached initial directory
-                    System.out.println(currentDir.toString());
-                    break;
-                    
-                case "cd":
-                    handleCd(commandArgs);
-                    break;
-                    
-                // Add your previous stage implementations (echo, type, external execution) here
-                
-                default:
-                    System.out.println(command + ": command not found");
+            if (input.equals("pwd")) {
+                System.out.println(currentDirectory.toString());
+                continue;
             }
-        }
-        scanner.close();
-    }
 
-    private static void handleCd(String[] args) {
-        if (args.length < 2) {
-            return; 
-        }
+            if (input.startsWith("cd ")) {
+                String dir = input.substring(3).trim();
 
-        String pathStr = args[1];
-        Path targetDir = Paths.get(pathStr);
+                Path target = Paths.get(dir);
 
-        // 3. Attempt the directory change
-        if (Files.exists(targetDir) && Files.isDirectory(targetDir)) {
-            // Update the tracked directory variable
-            currentDir = targetDir.normalize();
-            
-            // Optional but highly recommended: Update the JVM's property 
-            // so any ProcessBuilder you use later defaults to this new directory
-            System.setProperty("user.dir", currentDir.toString());
-        } else {
-            // Print the exact error string the tester expects
-            System.out.printf("cd: %s: No such file or directory\n", pathStr);
+                if (Files.exists(target) && Files.isDirectory(target)) {
+                    currentDirectory = target.normalize();
+                } else {
+                    System.out.println("cd: " + dir + ": No such file or directory");
+                }
+                continue;
+            }
+
+            if (input.startsWith("type ")) {
+                String command = input.substring(5).trim();
+
+                if (command.equals("echo")
+                        || command.equals("exit")
+                        || command.equals("type")
+                        || command.equals("pwd")
+                        || command.equals("cd")) {
+                    System.out.println(command + " is a shell builtin");
+                } else {
+                    String pathEnv = System.getenv("PATH");
+
+                    if (pathEnv != null) {
+                        String[] paths = pathEnv.split(File.pathSeparator);
+                        boolean found = false;
+
+                        for (String path : paths) {
+                            File file = new File(path, command);
+
+                            if (file.exists() && file.canExecute()) {
+                                System.out.println(command + " is " + file.getAbsolutePath());
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found) {
+                            System.out.println(command + ": not found");
+                        }
+                    } else {
+                        System.out.println(command + ": not found");
+                    }
+                }
+                continue;
+            }
+
+            System.out.println(input + ": command not found");
         }
     }
 }

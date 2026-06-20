@@ -21,6 +21,14 @@ public class Main {
         for (int i = 0; i < input.length(); i++) {
             char ch = input.charAt(i);
 
+            if (!inSingleQuotes && !inDoubleQuotes && ch == '\\') {
+                if (i + 1 < input.length()) {
+                    current.append(input.charAt(i + 1));
+                    i++;
+                }
+                continue;
+            }
+
             if (ch == '\'' && !inDoubleQuotes) {
                 inSingleQuotes = !inSingleQuotes;
                 continue;
@@ -113,6 +121,7 @@ public class Main {
                         || target.equals("type")
                         || target.equals("pwd")
                         || target.equals("cd")) {
+
                     System.out.println(target + " is a shell builtin");
                 } else {
                     String executable = findExecutable(target);

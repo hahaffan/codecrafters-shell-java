@@ -15,11 +15,20 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        String line;
-        while ((line = reader.readLine()) != null) {
+        while (true) {
+            System.out.print("$ ");
+            System.out.flush();
+            String line = reader.readLine();
+            if (line == null) break;
             line = line.trim();
             if (line.isEmpty()) continue;
-            try { runCommand(line); } catch (ExitException e) { System.exit(e.code); }
+            try {
+                runCommand(line);
+            } catch (ExitException e) {
+                System.exit(e.code);
+            } catch (Exception e) {
+                // Catching exceptions prevents the shell from exiting on bad input
+            }
         }
     }
 
@@ -42,18 +51,21 @@ public class Main {
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
         if (BUILTINS.contains(cmd) && !background) {
-            // Builtins with redirection support
-            PrintStream out = System.out, err = System.err;
-            if (redir.stdoutFile != null) System.setOut(new PrintStream(new FileOutputStream(redir.stdoutFile, redir.stdoutAppend)));
-            if (redir.stderrFile != null) System.setErr(new PrintStream(new FileOutputStream(redir.stderrFile, redir.stderrAppend)));
-            dispatch(cmd, cmdArgs, null, false, null);
-            System.setOut(out); System.setErr(err);
+            PrintStream originalOut = System.out, originalErr = System.err;
+            try {
+                if (redir.stdoutFile != null) System.setOut(new PrintStream(new FileOutputStream(redir.stdoutFile, redir.stdoutAppend)));
+                if (redir.stderrFile != null) System.setErr(new PrintStream(new FileOutputStream(redir.stderrFile, redir.stderrAppend)));
+                dispatch(cmd, cmdArgs);
+            } finally {
+                System.setOut(originalOut);
+                System.setErr(originalErr);
+            }
         } else {
             handleExternal(cmd, cmdArgs, redir, background, originalLine);
         }
     }
 
-    private static void dispatch(String cmd, List<String> args, Redirection r, boolean b, String o) {
+    private static void dispatch(String cmd, List<String> args) {
         switch (cmd) {
             case "exit" -> throw new ExitException(args.isEmpty() ? 0 : Integer.parseInt(args.get(0)));
             case "echo" -> System.out.println(String.join(" ", args));
@@ -120,7 +132,9 @@ public class Main {
     }
 
     private static String findInPath(String cmd) {
-        for (String dir : System.getenv("PATH").split(":")) {
+        String path = System.getenv("PATH");
+        if (path == null) return null;
+        for (String dir : path.split(":")) {
             File f = new File(dir, cmd);
             if (f.isFile() && f.canExecute()) return f.getAbsolutePath();
         }

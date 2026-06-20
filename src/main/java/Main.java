@@ -2,9 +2,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public class Builtins {
+// 'public' keyword removed so this can stay in Main.java
+class Builtins {
     
-    // In Java, the shell's current working directory must be tracked manually
     public static Path currentDir = Paths.get(System.getProperty("user.dir"));
 
     public static void handleCd(String[] args) {

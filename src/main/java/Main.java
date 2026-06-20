@@ -4,21 +4,18 @@ import java.util.*;
 
 public class Main {
 
-    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList(
-            "echo", "exit", "type", "pwd", "cd"
-    ));
+    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("echo", "exit", "type", "pwd", "cd"));
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        String line;
 
         while (true) {
             System.out.print("$ ");
             System.out.flush();
 
-            String line = reader.readLine();
-            if (line == null) {
-                break;
-            }
+            line = reader.readLine();
+            if (line == null) break;
 
             try {
                 runCommand(line);
@@ -28,98 +25,86 @@ public class Main {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Redirection info
+    // -------------------------------------------------------------------------
+
     private static class Redirection {
-        String stdoutFile;
+        String stdoutFile = null;
     }
+
+    // -------------------------------------------------------------------------
+    // Command dispatch
+    // -------------------------------------------------------------------------
 
     private static void runCommand(String line) throws IOException {
         line = line.trim();
-
-        if (line.isEmpty()) {
-            return;
-        }
+        if (line.isEmpty()) return;
 
         List<String> tokens = tokenize(line);
+        if (tokens.isEmpty()) return;
 
-        if (tokens.isEmpty()) {
-            return;
-        }
+        Redirection redir = new Redirection();
+        tokens = extractRedirections(tokens, redir);
+        if (tokens.isEmpty()) return;
 
-        Redirection redirection = new Redirection();
-        tokens = extractRedirections(tokens, redirection);
+        String cmd = tokens.get(0);
+        List<String> cmdArgs = tokens.subList(1, tokens.size());
 
-        if (tokens.isEmpty()) {
-            return;
-        }
-
-        String command = tokens.get(0);
-        List<String> args = tokens.subList(1, tokens.size());
-
-        if (redirection.stdoutFile != null && BUILTINS.contains(command)) {
-            PrintStream originalOut = System.out;
-            PrintStream fileOut = new PrintStream(
-                    new FileOutputStream(redirection.stdoutFile, false)
-            );
-
+        if (redir.stdoutFile != null) {
+            // For builtins: swap System.out to write to the file
+            PrintStream fileOut = new PrintStream(new FileOutputStream(redir.stdoutFile, false));
+            PrintStream oldOut  = System.out;
             System.setOut(fileOut);
-
             try {
-                dispatch(command, args, redirection);
+                dispatch(cmd, cmdArgs, redir);
             } finally {
                 System.out.flush();
-                System.setOut(originalOut);
+                System.setOut(oldOut);
                 fileOut.close();
             }
         } else {
-            dispatch(command, args, redirection);
+            dispatch(cmd, cmdArgs, redir);
         }
     }
 
-    private static void dispatch(String command,
-                                 List<String> args,
-                                 Redirection redirection) throws IOException {
-
-        switch (command) {
-            case "exit" -> handleExit(args);
-            case "echo" -> handleEcho(args);
-            case "type" -> handleType(args);
-            case "pwd" -> handlePwd();
-            case "cd" -> handleCd(args);
-            default -> handleExternal(command, args, redirection);
+    private static void dispatch(String cmd, List<String> cmdArgs, Redirection redir) throws IOException {
+        switch (cmd) {
+            case "exit" -> handleExit(cmdArgs);
+            case "echo" -> handleEcho(cmdArgs);
+            case "type" -> handleType(cmdArgs);
+            case "pwd"  -> handlePwd();
+            case "cd"   -> handleCd(cmdArgs);
+            default     -> handleExternal(cmd, cmdArgs, redir);
         }
     }
 
-    private static List<String> extractRedirections(List<String> tokens,
-                                                    Redirection redirection) {
+    // -------------------------------------------------------------------------
+    // Redirection extraction
+    // -------------------------------------------------------------------------
 
+    private static List<String> extractRedirections(List<String> tokens, Redirection redir) {
         List<String> result = new ArrayList<>();
-
         int i = 0;
-
         while (i < tokens.size()) {
-            String token = tokens.get(i);
-
-            if ((token.equals(">") || token.equals("1>"))
-                    && i + 1 < tokens.size()) {
-
-                redirection.stdoutFile = tokens.get(i + 1);
+            String t = tokens.get(i);
+            if ((t.equals(">") || t.equals("1>")) && i + 1 < tokens.size()) {
+                redir.stdoutFile = tokens.get(i + 1);
                 i += 2;
             } else {
-                result.add(token);
+                result.add(t);
                 i++;
             }
         }
-
         return result;
     }
 
+    // -------------------------------------------------------------------------
+    // Built-in commands
+    // -------------------------------------------------------------------------
+
     private static void handleExit(List<String> args) {
-        int code = 0;
-
-        if (!args.isEmpty()) {
-            code = Integer.parseInt(args.get(0));
-        }
-
+        int code = args.isEmpty() ? 0 : Integer.parseInt(args.get(0));
         throw new ExitException(code);
     }
 
@@ -132,10 +117,9 @@ public class Main {
             if (BUILTINS.contains(arg)) {
                 System.out.println(arg + " is a shell builtin");
             } else {
-                String path = findInPath(arg);
-
-                if (path != null) {
-                    System.out.println(arg + " is " + path);
+                String found = findInPath(arg);
+                if (found != null) {
+                    System.out.println(arg + " is " + found);
                 } else {
                     System.out.println(arg + ": not found");
                 }
@@ -148,76 +132,52 @@ public class Main {
     }
 
     private static void handleCd(List<String> args) {
-        String target;
-
-        if (args.isEmpty()) {
-            target = System.getenv("HOME");
-        } else {
-            target = args.get(0);
-        }
-
-        if (target == null) {
-            target = "/";
-        }
-
-        if (target.equals("~")) {
-            target = System.getenv("HOME");
-        }
-
-        if (target == null) {
-            target = "/";
-        }
+        String target = args.isEmpty() ? System.getenv("HOME") : args.get(0);
+        if (target == null) target = "/";
+        if (target.equals("~")) target = System.getenv("HOME");
+        if (target == null) target = "/";
 
         File dir = new File(target);
-
         if (!dir.isAbsolute()) {
             dir = new File(System.getProperty("user.dir"), target);
         }
 
         if (!dir.exists()) {
             System.err.println("cd: " + target + ": No such file or directory");
-            return;
-        }
-
-        if (!dir.isDirectory()) {
+        } else if (!dir.isDirectory()) {
             System.err.println("cd: " + target + ": Not a directory");
-            return;
+        } else {
+            System.setProperty("user.dir", dir.toPath().normalize().toAbsolutePath().toString());
         }
-
-        System.setProperty(
-                "user.dir",
-                dir.toPath().normalize().toAbsolutePath().toString()
-        );
     }
 
-    private static void handleExternal(String cmd,
-                                       List<String> args,
-                                       Redirection redirection)
-            throws IOException {
+    // -------------------------------------------------------------------------
+    // External commands
+    // -------------------------------------------------------------------------
 
+    private static void handleExternal(String cmd, List<String> args, Redirection redir) throws IOException {
         String fullPath = findInPath(cmd);
-
         if (fullPath == null) {
             System.err.println(cmd + ": command not found");
             return;
         }
 
         List<String> command = new ArrayList<>();
-        command.add(cmd);
+        command.add(fullPath);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(System.getProperty("user.dir")));
 
-        if (redirection.stdoutFile != null) {
-            pb.redirectOutput(new File(redirection.stdoutFile));
+        if (redir.stdoutFile != null) {
+            // stdout → file, stderr → terminal
+            pb.redirectOutput(new File(redir.stdoutFile));
             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
         } else {
             pb.inheritIO();
         }
 
         Process process = pb.start();
-
         try {
             process.waitFor();
         } catch (InterruptedException e) {
@@ -225,140 +185,115 @@ public class Main {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Tokenizer
+    // -------------------------------------------------------------------------
+
     private static List<String> tokenize(String line) {
         List<String> tokens = new ArrayList<>();
-        StringBuilder token = new StringBuilder();
-
         int i = 0;
+        int len = line.length();
 
-        while (i < line.length()) {
+        while (i < len) {
+            while (i < len && isWhitespace(line.charAt(i))) i++;
+            if (i >= len) break;
+
             char c = line.charAt(i);
 
-            if (c == '\'') {
-                i++;
-
-                while (i < line.length() && line.charAt(i) != '\'') {
-                    token.append(line.charAt(i));
-                    i++;
-                }
-
-                if (i < line.length()) {
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (c == '"') {
-                i++;
-
-                while (i < line.length() && line.charAt(i) != '"') {
-                    if (line.charAt(i) == '\\' && i + 1 < line.length()) {
-                        char next = line.charAt(i + 1);
-
-                        if (next == '"' || next == '\\' || next == '$' || next == '`') {
-                            token.append(next);
-                            i += 2;
-                        } else {
-                            token.append('\\');
-                            i++;
-                        }
-                    } else {
-                        token.append(line.charAt(i));
-                        i++;
-                    }
-                }
-
-                if (i < line.length()) {
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (c == '\\') {
-                if (i + 1 < line.length()) {
-                    token.append(line.charAt(i + 1));
-                    i += 2;
-                } else {
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (c == '1'
-                    && i + 1 < line.length()
-                    && line.charAt(i + 1) == '>') {
-
-                if (token.length() > 0) {
-                    tokens.add(token.toString());
-                    token.setLength(0);
-                }
-
+            // Standalone redirection operators
+            if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') {
                 tokens.add("1>");
                 i += 2;
                 continue;
             }
-
             if (c == '>') {
-                if (token.length() > 0) {
-                    tokens.add(token.toString());
-                    token.setLength(0);
-                }
-
                 tokens.add(">");
                 i++;
                 continue;
             }
 
-            if (Character.isWhitespace(c)) {
-                if (token.length() > 0) {
-                    tokens.add(token.toString());
-                    token.setLength(0);
+            // Regular token
+            StringBuilder token = new StringBuilder();
+            while (i < len && !isWhitespace(line.charAt(i))) {
+                c = line.charAt(i);
+
+                // Break on bare redirection operators
+                if (c == '>') break;
+                if (c == '1' && i + 1 < len && line.charAt(i + 1) == '>') break;
+
+                if (c == '\'') {
+                    i++;
+                    while (i < len && line.charAt(i) != '\'') {
+                        token.append(line.charAt(i++));
+                    }
+                    if (i < len) i++;
+
+                } else if (c == '"') {
+                    i++;
+                    while (i < len && line.charAt(i) != '"') {
+                        if (line.charAt(i) == '\\' && i + 1 < len) {
+                            char next = line.charAt(i + 1);
+                            if (next == '"' || next == '\\' || next == '$'
+                                    || next == '`' || next == '\n') {
+                                token.append(next);
+                                i += 2;
+                            } else {
+                                token.append('\\');
+                                i++;
+                            }
+                        } else {
+                            token.append(line.charAt(i++));
+                        }
+                    }
+                    if (i < len) i++;
+
+                } else if (c == '\\') {
+                    if (i + 1 < len) {
+                        token.append(line.charAt(i + 1));
+                        i += 2;
+                    } else {
+                        token.append(c);
+                        i++;
+                    }
+
+                } else {
+                    token.append(c);
+                    i++;
                 }
-
-                i++;
-                continue;
             }
-
-            token.append(c);
-            i++;
-        }
-
-        if (token.length() > 0) {
-            tokens.add(token.toString());
+            if (token.length() > 0) tokens.add(token.toString());
         }
 
         return tokens;
     }
 
-    private static String findInPath(String command) {
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static boolean isWhitespace(char c) {
+        return c == ' ' || c == '\t';
+    }
+
+    private static String findInPath(String cmd) {
         String pathEnv = System.getenv("PATH");
-
-        if (pathEnv == null) {
-            return null;
-        }
-
-        String[] directories = pathEnv.split(":");
-
-        for (String directory : directories) {
-            Path fullPath = Paths.get(directory, command);
-            File file = fullPath.toFile();
-
+        if (pathEnv == null) return null;
+        for (String dir : pathEnv.split(":")) {
+            Path full = Paths.get(dir, cmd);
+            File file = full.toFile();
             if (file.isFile() && file.canExecute()) {
-                return fullPath.toString();
+                return full.toString();
             }
         }
-
         return null;
     }
 
+    // -------------------------------------------------------------------------
+    // Internal exception for exit
+    // -------------------------------------------------------------------------
+
     private static class ExitException extends RuntimeException {
         final int code;
-
-        ExitException(int code) {
-            this.code = code;
-        }
+        ExitException(int code) { this.code = code; }
     }
 }

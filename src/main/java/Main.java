@@ -8,12 +8,26 @@ public class Main {
             System.out.print("$ ");
             String input = scanner.nextLine();
 
-            if (input.equals("exit")) {
+            if (input.equals("exit 0")) {
                 break;
             }
 
             if (input.startsWith("echo ")) {
                 System.out.println(input.substring(5));
+                continue;
+            }
+
+            if (input.startsWith("type ")) {
+                String command = input.substring(5);
+
+                if (command.equals("echo") ||
+                    command.equals("exit") ||
+                    command.equals("type")) {
+                    System.out.println(command + " is a shell builtin");
+                } else {
+                    System.out.println(command + ": not found");
+                }
+
                 continue;
             }
 

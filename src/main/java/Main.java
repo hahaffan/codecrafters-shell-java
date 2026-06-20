@@ -226,6 +226,7 @@ public class Main {
 
     private static void handleJobs() {
         List<Job> jobsList = new ArrayList<>(backgroundJobs.values());
+        List<Integer> toRemove = new ArrayList<>();
         int size = jobsList.size();
         
         for (int i = 0; i < size; i++) {
@@ -239,7 +240,22 @@ public class Main {
                 marker = "-";
             }
             
-            System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
+            if (job.process.isAlive()) {
+                System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Running", job.command);
+            } else {
+                // Remove trailing '&' for finished jobs
+                String doneCommand = job.command;
+                if (doneCommand.endsWith("&")) {
+                    doneCommand = doneCommand.substring(0, doneCommand.length() - 1).trim();
+                }
+                System.out.printf("[%d]%s  %-24s%s\n", job.id, marker, "Done", doneCommand);
+                toRemove.add(job.id); // Mark to remove it so it won't show up in subsequent `jobs` calls
+            }
+        }
+        
+        // Reap the finished jobs from tracking
+        for (Integer id : toRemove) {
+            backgroundJobs.remove(id);
         }
     }
 

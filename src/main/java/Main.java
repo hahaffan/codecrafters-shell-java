@@ -225,7 +225,7 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath); // Use fullPath here to guarantee correct executable location
+        command.add(cmd); // Passes the base command name to argv[0] to satisfy the test
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);

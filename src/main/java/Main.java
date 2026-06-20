@@ -10,13 +10,12 @@ public class Main {
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        String line;
 
         while (true) {
             System.out.print("$ ");
             System.out.flush();
 
-            line = reader.readLine();
+            String line = reader.readLine();
             if (line == null) {
                 break;
             }
@@ -29,83 +28,81 @@ public class Main {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Redirection info
-    // -------------------------------------------------------------------------
-
     private static class Redirection {
-        String stdoutFile = null;
+        String stdoutFile;
     }
-
-    // -------------------------------------------------------------------------
-    // Command dispatch
-    // -------------------------------------------------------------------------
 
     private static void runCommand(String line) throws IOException {
         line = line.trim();
+
         if (line.isEmpty()) {
             return;
         }
 
         List<String> tokens = tokenize(line);
-        if (tokens.isEmpty()) {
-            return;
-        }
-
-        Redirection redir = new Redirection();
-        tokens = extractRedirections(tokens, redir);
 
         if (tokens.isEmpty()) {
             return;
         }
 
-        String cmd = tokens.get(0);
-        List<String> cmdArgs = tokens.subList(1, tokens.size());
+        Redirection redirection = new Redirection();
+        tokens = extractRedirections(tokens, redirection);
 
-        if (redir.stdoutFile != null && BUILTINS.contains(cmd)) {
-            PrintStream oldOut = System.out;
+        if (tokens.isEmpty()) {
+            return;
+        }
+
+        String command = tokens.get(0);
+        List<String> args = tokens.subList(1, tokens.size());
+
+        if (redirection.stdoutFile != null && BUILTINS.contains(command)) {
+            PrintStream originalOut = System.out;
             PrintStream fileOut = new PrintStream(
-                    new FileOutputStream(redir.stdoutFile, false)
+                    new FileOutputStream(redirection.stdoutFile, false)
             );
 
             System.setOut(fileOut);
 
             try {
-                dispatch(cmd, cmdArgs, redir);
+                dispatch(command, args, redirection);
             } finally {
                 System.out.flush();
-                System.setOut(oldOut);
+                System.setOut(originalOut);
                 fileOut.close();
             }
         } else {
-            dispatch(cmd, cmdArgs, redir);
+            dispatch(command, args, redirection);
         }
     }
 
-    private static void dispatch(String cmd, List<String> cmdArgs, Redirection redir) throws IOException {
-        switch (cmd) {
-            case "exit" -> handleExit(cmdArgs);
-            case "echo" -> handleEcho(cmdArgs);
-            case "type" -> handleType(cmdArgs);
+    private static void dispatch(String command,
+                                 List<String> args,
+                                 Redirection redirection) throws IOException {
+
+        switch (command) {
+            case "exit" -> handleExit(args);
+            case "echo" -> handleEcho(args);
+            case "type" -> handleType(args);
             case "pwd" -> handlePwd();
-            case "cd" -> handleCd(cmdArgs);
-            default -> handleExternal(cmd, cmdArgs, redir);
+            case "cd" -> handleCd(args);
+            default -> handleExternal(command, args, redirection);
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Redirection extraction
-    // -------------------------------------------------------------------------
+    private static List<String> extractRedirections(List<String> tokens,
+                                                    Redirection redirection) {
 
-    private static List<String> extractRedirections(List<String> tokens, Redirection redir) {
         List<String> result = new ArrayList<>();
 
         int i = 0;
+
         while (i < tokens.size()) {
             String token = tokens.get(i);
 
-            if ((token.equals(">") || token.equals("1>")) && i + 1 < tokens.size()) {
-                redir.stdoutFile = tokens.get(i + 1);
+            if ((token.equals(">") || token.equals("1>"))
+                    && i + 1 < tokens.size()) {
+
+                redirection.stdoutFile = tokens.get(i + 1);
                 i += 2;
             } else {
                 result.add(token);
@@ -115,10 +112,6 @@ public class Main {
 
         return result;
     }
-
-    // -------------------------------------------------------------------------
-    // Built-ins
-    // -------------------------------------------------------------------------
 
     private static void handleExit(List<String> args) {
         int code = 0;
@@ -197,11 +190,9 @@ public class Main {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // External commands
-    // -------------------------------------------------------------------------
-
-    private static void handleExternal(String cmd, List<String> args, Redirection redir)
+    private static void handleExternal(String cmd,
+                                       List<String> args,
+                                       Redirection redirection)
             throws IOException {
 
         String fullPath = findInPath(cmd);
@@ -212,14 +203,14 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(cmd);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.directory(new File(System.getProperty("user.dir")));
 
-        if (redir.stdoutFile != null) {
-            pb.redirectOutput(new File(redir.stdoutFile));
+        if (redirection.stdoutFile != null) {
+            pb.redirectOutput(new File(redirection.stdoutFile));
             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
         } else {
             pb.inheritIO();
@@ -233,10 +224,6 @@ public class Main {
             Thread.currentThread().interrupt();
         }
     }
-
-    // -------------------------------------------------------------------------
-    // Tokenizer
-    // -------------------------------------------------------------------------
 
     private static List<String> tokenize(String line) {
         List<String> tokens = new ArrayList<>();
@@ -300,7 +287,10 @@ public class Main {
                 continue;
             }
 
-            if (c == '1' && i + 1 < line.length() && line.charAt(i + 1) == '>') {
+            if (c == '1'
+                    && i + 1 < line.length()
+                    && line.charAt(i + 1) == '>') {
+
                 if (token.length() > 0) {
                     tokens.add(token.toString());
                     token.setLength(0);
@@ -343,21 +333,17 @@ public class Main {
         return tokens;
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    private static String findInPath(String cmd) {
+    private static String findInPath(String command) {
         String pathEnv = System.getenv("PATH");
 
         if (pathEnv == null) {
             return null;
         }
 
-        String[] dirs = pathEnv.split(":");
+        String[] directories = pathEnv.split(":");
 
-        for (String dir : dirs) {
-            Path fullPath = Paths.get(dir, cmd);
+        for (String directory : directories) {
+            Path fullPath = Paths.get(directory, command);
             File file = fullPath.toFile();
 
             if (file.isFile() && file.canExecute()) {
@@ -367,10 +353,6 @@ public class Main {
 
         return null;
     }
-
-    // -------------------------------------------------------------------------
-    // Exit exception
-    // -------------------------------------------------------------------------
 
     private static class ExitException extends RuntimeException {
         final int code;

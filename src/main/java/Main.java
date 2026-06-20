@@ -40,12 +40,18 @@ public class Main {
                 continue;
             }
 
+            if (input.equals("pwd")) {
+                System.out.println(System.getProperty("user.dir"));
+                continue;
+            }
+
             if (input.startsWith("type ")) {
                 String command = input.substring(5);
 
                 if (command.equals("echo")
                         || command.equals("exit")
-                        || command.equals("type")) {
+                        || command.equals("type")
+                        || command.equals("pwd")) {
                     System.out.println(command + " is a shell builtin");
                 } else {
                     String executable = findExecutable(command);

@@ -1,6 +1,10 @@
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
 public class Main {
     private static Path currentDirectory = Paths.get(System.getProperty("user.dir"));
@@ -11,7 +15,7 @@ public class Main {
         while (true) {
             System.out.print("$ ");
 
-            String input = scanner.nextLine().trim();
+            String input = scanner.nextLine();
 
             if (input.equals("exit 0")) {
                 break;
@@ -49,34 +53,70 @@ public class Main {
                         || command.equals("pwd")
                         || command.equals("cd")) {
                     System.out.println(command + " is a shell builtin");
-                } else {
-                    String pathEnv = System.getenv("PATH");
+                    continue;
+                }
 
-                    if (pathEnv != null) {
-                        String[] paths = pathEnv.split(File.pathSeparator);
-                        boolean found = false;
+                String pathEnv = System.getenv("PATH");
+                boolean found = false;
 
-                        for (String path : paths) {
-                            File file = new File(path, command);
+                if (pathEnv != null) {
+                    String[] paths = pathEnv.split(File.pathSeparator);
 
-                            if (file.exists() && file.canExecute()) {
-                                System.out.println(command + " is " + file.getAbsolutePath());
-                                found = true;
-                                break;
-                            }
+                    for (String path : paths) {
+                        File file = new File(path, command);
+
+                        if (file.exists() && file.canExecute()) {
+                            System.out.println(command + " is " + file.getAbsolutePath());
+                            found = true;
+                            break;
                         }
-
-                        if (!found) {
-                            System.out.println(command + ": not found");
-                        }
-                    } else {
-                        System.out.println(command + ": not found");
                     }
                 }
+
+                if (!found) {
+                    System.out.println(command + ": not found");
+                }
+
                 continue;
             }
 
-            System.out.println(input + ": command not found");
+            String[] parts = input.split(" ");
+            String command = parts[0];
+
+            String pathEnv = System.getenv("PATH");
+            boolean executed = false;
+
+            if (pathEnv != null) {
+                String[] paths = pathEnv.split(File.pathSeparator);
+
+                for (String path : paths) {
+                    File file = new File(path, command);
+
+                    if (file.exists() && file.canExecute()) {
+                        List<String> cmd = new ArrayList<>();
+                        cmd.add(file.getAbsolutePath());
+
+                        for (int i = 1; i < parts.length; i++) {
+                            cmd.add(parts[i]);
+                        }
+
+                        Process process = new ProcessBuilder(cmd)
+                                .directory(currentDirectory.toFile())
+                                .inheritIO()
+                                .start();
+
+                        process.waitFor();
+                        executed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!executed) {
+                System.out.println(input + ": command not found");
+            }
         }
+
+        scanner.close();
     }
 }

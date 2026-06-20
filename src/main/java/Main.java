@@ -4,18 +4,20 @@ import java.util.*;
 
 public class Main {
 
-    private static final Set<String> BUILTINS = new HashSet<>(Arrays.asList("echo", "exit", "type", "pwd", "cd"));
+    private static final Set<String> BUILTINS = new HashSet<>(
+            Arrays.asList("echo", "exit", "type", "pwd", "cd"));
 
     public static void main(String[] args) throws IOException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-        String line;
 
         while (true) {
             System.out.print("$ ");
             System.out.flush();
 
-            line = reader.readLine();
-            if (line == null) break;
+            String line = reader.readLine();
+            if (line == null) {
+                break;
+            }
 
             try {
                 runCommand(line);
@@ -27,21 +29,39 @@ public class Main {
 
     private static void runCommand(String line) throws IOException {
         line = line.trim();
-        if (line.isEmpty()) return;
+
+        if (line.isEmpty()) {
+            return;
+        }
 
         List<String> tokens = tokenize(line);
-        if (tokens.isEmpty()) return;
+
+        if (tokens.isEmpty()) {
+            return;
+        }
 
         String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
         switch (cmd) {
-            case "exit" -> handleExit(cmdArgs);
-            case "echo" -> handleEcho(cmdArgs);
-            case "type" -> handleType(cmdArgs);
-            case "pwd" -> handlePwd();
-            case "cd" -> handleCd(cmdArgs);
-            default -> handleExternal(cmd, cmdArgs);
+            case "exit":
+                handleExit(cmdArgs);
+                break;
+            case "echo":
+                handleEcho(cmdArgs);
+                break;
+            case "type":
+                handleType(cmdArgs);
+                break;
+            case "pwd":
+                handlePwd();
+                break;
+            case "cd":
+                handleCd(cmdArgs);
+                break;
+            default:
+                handleExternal(cmd, cmdArgs);
+                break;
         }
     }
 
@@ -60,6 +80,7 @@ public class Main {
                 System.out.println(arg + " is a shell builtin");
             } else {
                 String found = findInPath(arg);
+
                 if (found != null) {
                     System.out.println(arg + " is " + found);
                 } else {
@@ -96,14 +117,18 @@ public class Main {
 
         if (!dir.exists()) {
             System.out.println("cd: " + target + ": No such file or directory");
-        } else if (!dir.isDirectory()) {
+            return;
+        }
+
+        if (!dir.isDirectory()) {
             System.out.println("cd: " + target + ": Not a directory");
-        } else {
-            System.setProperty(
+            return;
+        }
+
+        System.setProperty(
                 "user.dir",
                 dir.toPath().normalize().toAbsolutePath().toString()
-            );
-        }
+        );
     }
 
     private static void handleExternal(String cmd, List<String> args) throws IOException {
@@ -115,7 +140,7 @@ public class Main {
         }
 
         List<String> command = new ArrayList<>();
-        command.add(fullPath);
+        command.add(cmd);
         command.addAll(args);
 
         ProcessBuilder pb = new ProcessBuilder(command);

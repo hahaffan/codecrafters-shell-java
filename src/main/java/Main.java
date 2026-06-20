@@ -1,8 +1,30 @@
 import java.io.File;
+import java.io.IOException;
 import java.util.Scanner;
 
 public class Main {
-    public static void main(String[] args) {
+
+    private static String findExecutable(String command) {
+        String pathEnv = System.getenv("PATH");
+
+        if (pathEnv == null) {
+            return null;
+        }
+
+        String[] directories = pathEnv.split(File.pathSeparator);
+
+        for (String directory : directories) {
+            File file = new File(directory, command);
+
+            if (file.exists() && file.isFile() && file.canExecute()) {
+                return file.getAbsolutePath();
+            }
+        }
+
+        return null;
+    }
+
+    public static void main(String[] args) throws IOException, InterruptedException {
         Scanner scanner = new Scanner(System.in);
 
         while (true) {
@@ -26,22 +48,11 @@ public class Main {
                         || command.equals("type")) {
                     System.out.println(command + " is a shell builtin");
                 } else {
-                    String pathEnv = System.getenv("PATH");
-                    String[] directories = pathEnv.split(File.pathSeparator);
+                    String executable = findExecutable(command);
 
-                    boolean found = false;
-
-                    for (String directory : directories) {
-                        File file = new File(directory, command);
-
-                        if (file.exists() && file.isFile() && file.canExecute()) {
-                            System.out.println(command + " is " + file.getAbsolutePath());
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    if (!found) {
+                    if (executable != null) {
+                        System.out.println(command + " is " + executable);
+                    } else {
                         System.out.println(command + ": not found");
                     }
                 }
@@ -49,7 +60,18 @@ public class Main {
                 continue;
             }
 
-            System.out.println(input + ": command not found");
+            String[] parts = input.split(" ");
+            String executable = findExecutable(parts[0]);
+
+            if (executable != null) {
+                ProcessBuilder pb = new ProcessBuilder(parts);
+                pb.inheritIO();
+
+                Process process = pb.start();
+                process.waitFor();
+            } else {
+                System.out.println(input + ": command not found");
+            }
         }
 
         scanner.close();

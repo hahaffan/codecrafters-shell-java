@@ -26,9 +26,7 @@ public class Main {
                 runCommand(line);
             } catch (ExitException e) {
                 System.exit(e.code);
-            } catch (Exception e) {
-                // Catching exceptions prevents the shell from exiting on bad input
-            }
+            } catch (Exception e) {}
         }
     }
 
@@ -50,6 +48,7 @@ public class Main {
         String cmd = tokens.get(0);
         List<String> cmdArgs = tokens.subList(1, tokens.size());
 
+        // ONLY redirect built-ins. External commands handle their own via ProcessBuilder.
         if (BUILTINS.contains(cmd) && !background) {
             PrintStream originalOut = System.out, originalErr = System.err;
             try {
@@ -116,12 +115,24 @@ public class Main {
         String path = findInPath(cmd);
         if (path == null) { System.err.println(cmd + ": command not found"); return; }
         List<String> fullCmd = new ArrayList<>(List.of(path)); fullCmd.addAll(args);
+        
         ProcessBuilder pb = new ProcessBuilder(fullCmd);
+        
+        // Use inheritance by default for external, unless overridden by redirection
         if (r.stdoutFile != null) pb.redirectOutput(r.stdoutAppend ? ProcessBuilder.Redirect.appendTo(new File(r.stdoutFile)) : ProcessBuilder.Redirect.to(new File(r.stdoutFile)));
+        else pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+        
         if (r.stderrFile != null) pb.redirectError(r.stderrAppend ? ProcessBuilder.Redirect.appendTo(new File(r.stderrFile)) : ProcessBuilder.Redirect.to(new File(r.stderrFile)));
+        else pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+        
         Process p = pb.start();
-        if (b) { int id = nextJobNumber++; backgroundJobs.put(id, new Job(id, p, line)); System.out.println("[" + id + "] " + p.pid()); }
-        else { try { p.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } }
+        if (b) { 
+            int id = nextJobNumber++; 
+            backgroundJobs.put(id, new Job(id, p, line)); 
+            System.out.println("[" + id + "] " + p.pid()); 
+        } else { 
+            try { p.waitFor(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } 
+        }
     }
 
     private static List<String> tokenize(String line) {
